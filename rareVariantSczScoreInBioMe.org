@@ -1,0 +1,1060 @@
+
+* Annotate BioMe WES Variants (shell)
+
+#+BEGIN_SRC shell
+ 
+# setup
+  ml python py_packages bcftools tabix 
+  bme=/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/biallelic
+  dir=/sc/arion/projects/psychgen2/psychosis_nlp/data/biome
+  dr2=/sc/hydra/projects/rg_psychgen/scratch
+  myd=/sc/arion/projects/psychgen2/psychosis_nlp/scratch
+  scr=/sc/arion/projects/psychgen2/psychosis_nlp/scripts/annotate_biome_vcfs.sh
+  tar=/sc/arion/projects/psychgen2/psychosis_nlp/resources/BioMeTargetFile_xgen_plus_spikein.b38.bed
+  par=/hpc/packages/minerva-centos7/vep/96/src/loftee/src/read_vep_vcf.py
+
+# temporarily copy BioMe WES VCFs to rg_psychgen (need to be on regen2 for this bit)
+  cd ${dr2} 
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do 
+    echo ${i}
+    INPUT=${bme}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.vcf.gz
+    cp ${INPUT}* ./
+  done
+
+# run
+  cd ${myd}
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do 
+    INPUT=${dr2}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}
+    OUTPUT=${dir}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.LoF.gnomAD.MPC
+    mybsub psychgen bmeAnno${i} 10000 4:00 private 1 "sh ${scr} ${INPUT} ${OUTPUT}"
+  done
+
+# check
+  grep Success *out | wc -l #23 
+
+#+END_SRC
+
+
+* Retrieve Allele Frequencies in BioMe (shell)
+
+#+BEGIN_SRC shell
+
+# setup
+  ml python py_packages bcftools tabix 
+  bme=/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/biallelic
+  dr2=/sc/hydra/projects/rg_psychgen/scratch
+
+# run
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do 
+    echo ${i}
+    fil=${dr2}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.MakeSitesOnlyVcf.vcf.gz
+    out=${dr2}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.freq.txt
+    echo 'CHROM POS REF ALT BioMe_AN BioMe_AC BioMe_AF' | tr ' ' '\t' > ${out}
+    bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/AN\t%INFO/AC\t%INFO/AF\n' ${fil} >> ${out}
+  done
+ 
+#+END_SRC
+
+
+* Determine BioMe Coverage in gnomAD  (Part 1 - shell)
+
+#+BEGIN_SRC shell
+
+# setup
+  ml python py_packages bcftools tabix 
+  dr2=/sc/hydra/projects/rg_psychgen/scratch
+  sit=/sc/arion/projects/psychgen2/psychosis_nlp/data/biome/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.CHROM.POS.tsv
+
+# list biome variant sites
+  echo "CHROM POS" | tr ' ' '\t' > ${sit}
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do 
+    echo ${i}
+    out=${dr2}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.freq.txt
+    ot2=${dr2}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.sites.txt
+    awk 'NR>1 {print $1, $2}' ${out} | tr ' ' '\t' | sort | uniq >> ${sit}
+    awk 'NR>1 {print $2}' ${out} | tr ' ' '\t' | sort | uniq > ${ot2}
+  done
+
+# subset gnomad coverage files for biome sites
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do    
+    ot2=${dr2}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.sites.txt
+    cv1=/sc/arion/projects/psychgen2/resources/gnomAD/Coverage/2.1.1/gnomad.exomes.coverage.summary.chr${i}.liftOvered_to_hg38.tsv
+    cv2=/sc/arion/projects/psychgen2/resources/gnomAD/Coverage/2.1.1/gnomad.genomes.coverage.summary.chr${i}.liftOvered_to_hg38.tsv
+    of1=/sc/arion/projects/psychgen2/psychosis_nlp/data/biome/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.gnomadhg38exomeCovStats.txt
+    of2=/sc/arion/projects/psychgen2/psychosis_nlp/data/biome/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.gnomadhg38genomeCovStats.txt
+    of3=/sc/arion/projects/psychgen2/psychosis_nlp/data/biome/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.gnomadhg19exomeCovStats.txt
+    of4=/sc/arion/projects/psychgen2/psychosis_nlp/data/biome/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.gnomadhg19genomeCovStats.txt
+    mybsub psychgen ${i}a 2000 0:15 premium 1 "perl /sc/hydra/work/charna02/scripts/misc/subset_supplycol_space.pl ${ot2} ${cv1} 1 > ${of1}"
+    mybsub psychgen ${i}b 2000 0:15 premium 1 "perl /sc/hydra/work/charna02/scripts/misc/subset_supplycol_space.pl ${ot2} ${cv2} 1 > ${of2}"
+    mybsub psychgen ${i}c 2000 0:15 premium 1 "perl /sc/hydra/work/charna02/scripts/misc/subset_supplycol_space.pl ${ot2} ${cv1} 0 > ${of3}"
+    mybsub psychgen ${i}d 2000 0:15 premium 1 "perl /sc/hydra/work/charna02/scripts/misc/subset_supplycol_space.pl ${ot2} ${cv2} 0 > ${of4}"
+  done 
+
+#+END_SRC 
+
+
+* Determine BioMe Coverage in gnomAD  (Part 2 - R)
+
+#+BEGIN_SRC R
+
+# setup  
+  setwd("/sc/arion/projects/psychgen2/psychosis_nlp/data/biome")
+  source("/sc/hydra/work/charna02/scripts/rx/rx_myfunctions.r")
+  rgd <- "/sc/hydra/projects/rg_psychgen/scratch/"
+  pfx <- "SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr"
+  px2 <- "/sc/arion/projects/psychgen2/psychosis_nlp/data/biome/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr"
+
+# biome frequencies
+  mystuff <- c()
+  for (i in c(1:22, "X")){
+      print(i)
+      mystuff <- rbind(mystuff, fread(paste0(rgd, pfx, i,".freq.txt")))
+  }
+  mystuff[,BioMe_AF:=BioMe_AC/BioMe_AN]
+
+# biome coverage in gnomad
+  cn <-  c("POS.HG19", "POS.HG38", "CHROM", "mean", "median", "over_1", "over_5", "over_10", "over_15", "over_20", "over_25", "over_30", "over_50", "over_100")
+  covstats <- c()
+  for (i in c(1:22, "X")){
+      print(i)
+      a1 <- fread(paste0(px2,i,".gnomadhg38exomeCovStats.txt"))
+      a2 <- fread(paste0(px2,i,".gnomadhg38genomeCovStats.txt"))
+      a3 <- fread(paste0(px2,i,".gnomadhg19exomeCovStats.txt"))
+      a4 <- fread(paste0(px2,i,".gnomadhg19genomeCovStats.txt"))
+      colnames(a1) <- colnames(a2) <- colnames(a3) <- colnames(a4) <- cn
+      a1 <- a1[,.(CHROM, POS=POS.HG38, BUILD="hg38", DATA="exome", meanCov=mean)]
+      a2 <- a2[,.(CHROM, POS=POS.HG38, BUILD="hg38", DATA="genome", meanCov=mean)]
+      a3 <- a3[,.(CHROM, POS=POS.HG19, BUILD="hg19", DATA="exome", meanCov=mean)]
+      a4 <- a4[,.(CHROM, POS=POS.HG19, BUILD="hg19", DATA="genome", meanCov=mean)]
+      m1 <- merge(a1, a2, all=T)
+      m2 <- merge(a3, a4, all=T)
+      covstats <- rbind(covstats, m1, m2)
+  }
+
+# merge
+  mystuff <- merge(mystuff, covstats, by=intersect(colnames(mystuff), colnames(covstats)), all=T) 
+
+# how well-covered are the BioMe variant sites in gnomad? (this confirms lifting gnomad to hg38 is key for this)
+  mystuff[,.N,list(BUILD,DATA)][,.(BUILD, DATA, N, PCT=round(100*(N/uniqueN(mystuff[,.(CHROM, POS)])),2))]
+  ##   BUILD   DATA       N    PCT
+  ##1:  hg38  exome 3469234  87.86
+  ##2:  hg38 genome 3955553 100.18
+  ##3:  hg19 genome 3893278  98.60
+  ##4:  hg19  exome  306575   7.76
+
+# write 
+  out <- mystuff[BUILD=="hg38"]
+  out <- merge(out[DATA=="exome",.(CHROM, POS, REF, ALT, gnomAD.cov.exome=meanCov)],
+               out[DATA=="genome",.(CHROM, POS, REF, ALT, gnomAD.cov.genome=meanCov)], 
+               by=c("CHROM","POS", "REF", "ALT"), all=T)
+  out <- out[,list(gnomAD.cov.exome=max(gnomAD.cov.exome), gnomAD.cov.genome=max(gnomAD.cov.genome)), by=list(CHROM, POS)]
+  fwrite(out, row=F, quo=F, sep='\t', file="/sc/arion/projects/psychgen2/psychosis_nlp/data/biome/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.gnomADcoverage.tsv")
+
+#+END_SRC
+
+
+* Sanity Checks - Ensure Consistency Across Various BioMe Files (Part 1 - shell)
+
+#+BEGIN_SRC shell
+
+# setup
+  ml python py_packages bcftools tabix 
+  bme=/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/biallelic
+  dir=/sc/arion/projects/psychgen2/psychosis_nlp/data/biome
+  dr2=/sc/hydra/projects/rg_psychgen/scratch
+  myd=/sc/arion/projects/psychgen2/psychosis_nlp/scratch
+  scr=/sc/arion/projects/psychgen2/psychosis_nlp/scripts/annotate_biome_vcfs.sh
+  tar=/sc/arion/projects/psychgen2/psychosis_nlp/resources/BioMeTargetFile_xgen_plus_spikein.b38.bed
+
+# counts for various biome files that have been made
+  ##
+  ##count rows in primary vcf files (need to be on regen2)
+  ##
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do 
+    vcf=${bme}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.vcf.gz
+    zcat ${vcf} | grep ^\# -v | wc -l > ${myd}/TMP_fullvcf_wcl_chr${i} &
+  done 
+  ##
+  ##count rows in the sites-only vcfs we made
+  ##
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do 
+    sit=${dr2}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.MakeSitesOnlyVcf.vcf.gz
+    zcat ${sit} | grep ^\# -v | wc -l > ${myd}/TMP_sitesvcf_wcl_chr${i} &
+  done 
+  ##
+  ##count rows in af files
+  ##
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do 
+    afq=${dr2}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.freq.txt
+    awk 'NR>1' ${afq} | wc -l > ${myd}/TMP_afreq_wcl_chr${i} &
+  done 
+  ##
+  ##count rows in gnomad coverage files
+  ##
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do 
+    cve=${dir}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.gnomadexomeCovStats.txt
+    cvg=${dir}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.gnomadgenomeCovStats.txt
+    cat ${cve} | wc -l > ${myd}/TMP_gnoecov_wcl_chr${i} &
+    cat ${cvg} | wc -l > ${myd}/TMP_gnogcov_wcl_chr${i} &
+  done
+  ##
+  ##count rows in annotation files
+  ##
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do 
+    vep=${dir}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.LoF.gnomAD.MPC.BCFQUERYOUT
+    lof=${dir}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.LoF.gnomAD.MPC.tab 
+    awk 'NR>1' ${vep} | wc -l > ${myd}/TMP_vep_wcl_chr${i} &
+    grep ^\# ${lof} -v | wc -l > ${myd}/TMP_lof_wcl_chr${i} &
+  done
+  ##
+  ##put counts all in out file
+  ##
+  grep "" ${myd}/TMP*_wcl_chr* | tr ':' '\t' | awk -F"TMP_" '{print $2}' | sed s/'_wcl_chr'/' '/g  | tr ' ' '\t' > ${myd}/biome_sanity_counts.tsv
+
+#+END_SRC
+
+
+* Sanity Checks - Ensure Consistency Across Various BioMe Files (Part 2 - R)
+
+#+BEGIN_SRC R
+
+
+# setup  
+  setwd("/sc/arion/projects/psychgen2/psychosis_nlp/scratch")
+  source("/sc/hydra/work/charna02/scripts/rx/rx_myfunctions.r")
+
+# read in file woth counts info
+  dt <- fread("biome_sanity_counts.tsv")
+  dt2 <- dcast(dt, V2~V1, value.var="V3")
+  colnames(dt2) <- c("CHROM", "nFreqFile", "nVcfFile", "nGnoCovEx", "nGnoCovGen", "nLofteeFile", "nSitesOnlyVcfFile", "nVepFile")
+
+# just take a look to ensure it all checks out
+
+#+END_SRC
+
+
+* Unzip LOFTEE Output (shell)
+
+#+BEGIN_SRC shell
+
+# setup
+  cd /sc/arion/projects/psychgen2/psychosis_nlp/data/biome
+
+# unzip 
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do
+    echo ${i} 
+    f1=SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.LoF.gnomAD.MPC.tab.gz
+    f2=SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.LoF.gnomAD.MPC.tab
+    zcat ${f1} > ${f2}
+  done
+
+#+END_SRC
+
+
+* Process BioMe WES Annotations (R)
+
+#+BEGIN_SRC R
+
+# setup  
+  setwd("/sc/arion/projects/psychgen2/psychosis_nlp/data/biome")
+  source("/sc/hydra/work/charna02/scripts/rx/rx_myfunctions.r")
+  rgd <- "/sc/hydra/projects/rg_psychgen/scratch/"
+  pfx <- "SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr"
+  out <- "/sc/arion/projects/psychgen2/psychosis_nlp/data/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.myAnno_LoF_gnomAD_MPC_BioMeFreq.tsv"
+  eth <- "/sc/arion/projects/psychgen2/psychosis_nlp/files/eve.SINAI_Freeze_Two.NF.commonsnps_samples_ancestries.txt"
+
+# read in data
+  mystuff <- c()
+  for (i in c(1:22, "X")){
+      print(i)
+
+      ##read in loftee, mpc/gnomad, and biome annotations
+      f1 <- fread(paste0(pfx, i,".LoF.gnomAD.MPC.tab"), na=c("NA", "-"))
+      f2 <- fread(paste0(pfx, i,".LoF.gnomAD.MPC.BCFQUERYOUT"), na=c("NA", "."))
+      f3 <- fread(paste0(rgd, pfx, i,".freq.txt"))
+
+      ##format loftee
+      f1[,c("CHROM","POS","REFALT"):=tstrsplit(`#Uploaded_variation`,split="_")]
+      f1$POS <- as.integer(f1$POS)
+      if (i!="X"){f1$CHROM <- as.integer(f1$CHROM)}
+      f1[,c("REF", "ALT"):=tstrsplit(REFALT,split="/")]  
+      hasLoF <- unique(f1[!is.na(LoF)]$`#Uploaded_variation`)
+      noLoF <- unique(f1[is.na(LoF) & !`#Uploaded_variation` %in% hasLoF]$`#Uploaded_variation`)   
+      f1x <- unique(f1[`#Uploaded_variation` %in% hasLoF,.(info=paste(`#Uploaded_variation`, Gene), CHROM, POS, REF, ALT, LoF)])
+      f1y <- unique(f1[`#Uploaded_variation` %in% hasLoF,.(info=paste(`#Uploaded_variation`, Gene), `#Uploaded_variation`, LOFTEE.gene=Gene, CHROM, POS, REF, ALT)])
+      f1z <- unique(f1[`#Uploaded_variation` %in% noLoF,.(CHROM, POS, REF, ALT, LOFTEE.gene=NA, LOFTEE.LoF.HC=0, LOFTEE.LoF.LC=0)])
+      f1y$`LOFTEE.LoF.HC` <- 0
+      f1y$`LOFTEE.LoF.LC` <- 0
+      f1y[info %in% unique(f1x[LoF=="HC"]$info), LOFTEE.LoF.HC:=1]
+      f1y[info %in% unique(f1x[LoF=="LC"]$info), LOFTEE.LoF.LC:=1]
+      f1y <- f1y[LOFTEE.LoF.HC!=0 | LOFTEE.LoF.LC!=0, .(CHROM, POS, REF, ALT, LOFTEE.gene, LOFTEE.LoF.HC, LOFTEE.LoF.LC)]
+      f1 <- rbind(f1y, f1z)
+      f1[, isIndel:=0]
+      f1[REF=="-"|ALT=="-", isIndel:=1]
+
+      ##sanity check number of sites is same in loftee and biome
+      if (i!="X"){
+          check1 <- unique(f1[,.(CHROM=as.integer(CHROM), POS=as.integer(POS), REF, ALT, inF1=1)])
+      } else {
+          check1 <- unique(f1[,.(CHROM, POS=as.integer(POS), REF, ALT, inF1=1)])
+      }          
+      check2 <- unique(f3[,.(CHROM, POS, REF, ALT, inF3=1)])
+      if (nrow(check1) == nrow(check2)) {
+          cat("Same number of total sites in loftee output and vcf:", nrow(check1), "\n")
+      } else {
+          cat("Different number of total sites in loftee output and vcf:", nrow(check1), "vs.", nrow(check2), "\n")
+          stop
+      }
+
+      ##sanity check number of indels is same in loftee and biome
+      check1 <- check1[REF=="-"|ALT=="-"]
+      check2 <- check2[nchar(REF)>1|nchar(ALT)>1]
+      check1$POS <- check1$POS-1
+      check3 <- merge(check1, check2, by=c("CHROM", "POS"), suffixes=c(".loftee", ".freq"))
+      if (nrow(check3) == nrow(check1) & nrow(check3) == nrow(check2)) {
+          cat("Same number of indels in loftee output and vcf:", nrow(check1), "\n")
+      } else {
+          cat("Different number of indels in loftee output and vcf:", nrow(check1), "vs.", nrow(check2), "\n")
+          stop
+      }
+
+      ##fix loftee indel allele codes
+      f1snv <- f1[isIndel==0]
+      f1idl <- f1[isIndel==1]
+      f1idl$POS <- f1idl$POS-1
+      fix <- check3[,.(CHROM, POS=POS, REF=REF.loftee, ALT=ALT.loftee, REF.freq, ALT.freq)]
+      fix <- merge(f1idl, fix, by=c("CHROM", "POS", "REF", "ALT"))
+      fix <- fix[,.(CHROM, POS, REF=REF.freq, ALT=ALT.freq, LOFTEE.gene, LOFTEE.LoF.HC, LOFTEE.LoF.LC)]
+      f1snv$isIndel <- NULL
+      f1 <- unique(rbind(f1snv, fix))
+
+      ##format colnames for vep output
+      colnames(f2)[colnames(f2)=="Ensembl_geneid"] <- "MPC.gene"
+      colnames(f2)[colnames(f2)=="Ensembl_transcriptid"] <- "MPC.transcript"
+      colnames(f2) <- gsub("_", ".", fixed=T, colnames(f2))
+      f2.mpc <- f2[, list( MPC.gene = unlist(strsplit(MPC.gene, ",", fixed=T)),
+                          MPC.transcript = unlist(strsplit(MPC.transcript, ",", fixed=T)),
+                          MPC.score = unlist(strsplit(MPC.score, ",", fixed=T)) ), by=list(CHROM, POS, REF, ALT)][MPC.score!="."]
+      f2.gno <- f2[,c(1:4,8:ncol(f2)), with=F]
+      f2 <- merge(f2.mpc, f2.gno, all=T)
+      f2[,MPC.score:=as.numeric(MPC.score)]
+
+      ##merge
+      f4 <- merge(merge(f1, f2, by=c("CHROM","POS","REF","ALT")), f3, by=c("CHROM","POS","REF","ALT"))       
+
+      ##final sanity check we dont lose any sites in merging
+      x1 <- uniqueN(f1[,.(CHROM, POS, REF, ALT)])
+      x2 <- uniqueN(f2[,.(CHROM, POS, REF, ALT)])
+      x3 <- uniqueN(f3[,.(CHROM, POS, REF, ALT)])
+      x4 <- uniqueN(f4[,.(CHROM, POS, REF, ALT)])
+      if (!(x1 == x2 & x2 == x3 & x3 == x4)){
+          cat("ERROR: Sites are getting lost during the merge\n")
+          stop
+      } 
+
+      ##merge
+      cat("DONE: adding to mystuff\n")
+      mystuff <- rbind(mystuff, f4)
+  }
+  ###fwrite(mystuff, row=F, quo=F, sep='\t', file=out)
+
+# add gnomad coverage stats
+  gcov <- "/sc/arion/projects/psychgen2/psychosis_nlp/data/biome/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.gnomADcoverage.tsv"
+  gcov <- fread(gcov)
+  mystuff <- merge(mystuff, gcov, by=c("CHROM", "POS"), all=T)
+  ###fwrite(mystuff, row=F, quo=F, sep='\t', file=out)
+
+# treatment of NA frequencies in gnomad? count as zero (spot checked a few on gnomad browser)
+  gc1 <- grep("AF$|AC$", grep("gnom", colnames(mystuff), value=T), value=T)
+  for (i in gc1){
+      mystuff[[i]] <- as.numeric(mystuff[[i]])
+      mystuff[is.na(get(i)), try(i):=0]
+  }
+  gc2 <- grep("AN$", grep("gnom", colnames(mystuff), value=T), value=T)
+  for (i in gc2){
+      mystuff[[i]] <- as.numeric(mystuff[[i]])
+  }
+  ###fwrite(mystuff, row=F, quo=F, sep='\t', file=out)
+
+# whats the deal with biome frequencies?
+  kp2 <- c("CHROM", "POS", "REF", "ALT", "BioMe_AF", "BioMe_myAF", "gnomAD.exomes.AF", "gnomAD.genomes.AF", "gnomAD.cov.exome", "gnomAD.cov.genome")
+  mystuff[,BioMe_myAF:=BioMe_AC/BioMe_AN]
+  mystuff.freq <- mystuff[,kp2,with=F]
+  cor.test( mystuff.freq[!is.na(gnomAD.exomes.AF)]$BioMe_AF, mystuff.freq[!is.na(gnomAD.exomes.AF)]$BioMe_myAF )
+  cor.test( mystuff.freq[!is.na(gnomAD.exomes.AF)]$BioMe_AF, mystuff.freq[!is.na(gnomAD.exomes.AF)]$gnomAD.exomes.AF )
+  cor.test( mystuff.freq[!is.na(gnomAD.exomes.AF)]$BioMe_myAF, mystuff.freq[!is.na(gnomAD.exomes.AF)]$gnomAD.exomes.AF )
+  ##
+  ##for now, going to use the frequencies i calculated (AC/AN)
+  ##
+  mystuff[,BioMe_AF:=BioMe_myAF]
+  mystuff[,BioMe_myAF:=NULL]
+  ###fwrite(mystuff, row=F, quo=F, sep='\t', file=out)
+  mystuff.freq[,BioMe_AF:=BioMe_myAF]
+  mystuff.freq[,BioMe_myAF:=NULL]
+  mystuff.freq <- unique(mystuff.freq)
+  ##
+  ##how much of biome is in gnomad?
+  ##
+  ####
+  ####
+  ####
+  uniqueN(mystuff.freq) #[1] 3948620 
+  uniqueN(mystuff.freq[,.(CHROM, POS, REF, ALT)]) #[1] 3948620 ... sanity checking 1 row per variant here, good
+  nBioMeVar <- uniqueN(mystuff.freq[,.(CHROM, POS, REF, ALT)])
+  ####
+  ####number of biome variants not seen in gnomad exomes
+  ####
+  nBioMeVar.zeroFreqGnoExo <- uniqueN(mystuff.freq[gnomAD.exomes.AF==0,.(CHROM, POS, REF, ALT)])
+  ####
+  ####number of biome variants not seen in gnomad genomes
+  ####
+  nBioMeVar.zeroFreqGnoGen <- uniqueN(mystuff.freq[gnomAD.genomes.AF==0,.(CHROM, POS, REF, ALT)])
+  ####
+  ####number of biome variants not seen anywhere in gnomad (exomes or genomes; ie, the strongest evidence for not being in gnomad)
+  ####
+  nBioMeVar.zeroFreqGnoAny <- uniqueN(mystuff.freq[gnomAD.exomes.AF==0 & gnomAD.genomes.AF==0,.(CHROM, POS, REF, ALT)])
+  ####
+  ####number of biome variants not seen in gnomad exomes and no coverage in gnomad exomes
+  ####
+  nBioMeVar.zeroFreqGnoExo.zeroCovGnoExo <- uniqueN(mystuff.freq[gnomAD.exomes.AF==0 & is.na(gnomAD.cov.exome),.(CHROM, POS, REF, ALT)])
+  ####
+  ####number of biome variants not seen in gnomad genomes and no coverage in gnomad genomes
+  ####
+  nBioMeVar.zeroFreqGnoGen.zeroCovGnoGen <- uniqueN(mystuff.freq[gnomAD.genomes.AF==0 & is.na(gnomAD.cov.genome),.(CHROM, POS, REF, ALT)])
+  ####
+  ####number of biome variants not seen in gnomad anywhere and no coverage in gnomad anywhere
+  ####
+  nBioMeVar.zeroFreqGnoAny.zeroCovGnoAny <- uniqueN(mystuff.freq[gnomAD.exomes.AF==0 & gnomAD.genomes.AF==0 & is.na(gnomAD.cov.exome) & is.na(gnomAD.cov.genome),.(CHROM, POS, REF, ALT)])
+  ####
+  ####fraction of biome variants not seen in gnomad exomes
+  ####
+  nBioMeVar.zeroFreqGnoExo/nBioMeVar #[1] 0.6420367
+  ####
+  ####fraction of biome variants not seen in gnomad exomes and with no gnomad exome coverage
+  ####
+  nBioMeVar.zeroFreqGnoExo.zeroCovGnoExo/nBioMeVar #[1] 0.1226515 
+  nBioMeVar.zeroFreqGnoExo.zeroCovGnoExo/nBioMeVar.zeroFreqGnoExo #[1] 0.191035 ... shows that some of abscence from gnomad exomes is due to coverage differences between gnomad and biome
+  ####
+  ####fraction of biome variants not seen in gnomad genomes
+  ####
+  nBioMeVar.zeroFreqGnoGen/nBioMeVar #[1] 0.8184009 
+  ####
+  ####fraction of biome variants not seen in gnomad genomes and with no gnomad genome coverage
+  ####
+  nBioMeVar.zeroFreqGnoGen.zeroCovGnoGen/nBioMeVar #[1] 5.976772e-05 ... shows discrepancies in biome and gnomad genomes arent due to coverage (instead, due to gnomad genomes being smaller N than exomes)
+  ####
+  ####fraction of biome variants not seen in gnomad anywhere
+  ####
+  nBioMeVar.zeroFreqGnoAny/nBioMeVar #[1] 0.6269302
+  ####
+  #### OK, what are we doing here?
+  #### a) About 60% of variants in BioMe are not in gnomAD
+  #### b) In part, this is due to lack of coverage in gnomAD (for gnomAD exomes) and smaller N (for gnomAD genomes)
+  #### c) Possibile explanations: 
+  ####    - This number of novel variants is what we would expect from >30K exomes of diverse ancestry
+  ####    - There is a bug in our pipeline for annotating gnomAD frequencies (ie, the minimal representation 
+  ####      issue we have discovered in past versions of gnomAD are not accounted for on the backend of the annotation software)
+  ####    - Our BioMe data is not as QC'ed as we thought and a lot of these novel variants are bad variant calls
+  ####
+  #### These plots show the vast majority of the variants not in gnomAD have very low frequencies in BioMe
+  ####
+  BioMeVar.zeroFreqGnoAny <- unique(mystuff.freq[gnomAD.exomes.AF==0 & gnomAD.genomes.AF==0])
+  p1 <- ggplot(BioMeVar.zeroFreqGnoAny, aes(BioMe_AF)) + geom_histogram(col="black", fill="white", bins=50) + theme_base()
+  p2 <- ggplot(BioMeVar.zeroFreqGnoAny, aes(BioMe_AF)) + geom_density(col="black", fill="white") + theme_base()
+  ####
+  #### However, there are still a >50K variants not in gnomad that are common in BioMe
+  ####
+  uniqueN(BioMeVar.zeroFreqGnoAny[BioMe_AF>0.01,.(CHROM, POS, REF, ALT)]) / nBioMeVar.zeroFreqGnoAny #[1] 0.02317746
+  BioMeVar.zeroFreqGnoAny[is.na(gnomAD.cov.exome), gnomAD.cov.exome:=0]
+  BioMeVar.zeroFreqGnoAny[is.na(gnomAD.cov.genome), gnomAD.cov.genome:=0]
+  uniqueN(BioMeVar.zeroFreqGnoAny[BioMe_AF>0.01 & (gnomAD.cov.genome>0|gnomAD.cov.exome>0),.(CHROM, POS, REF, ALT)]) #[1] 57313
+  p3 <- ggplot(BioMeVar.zeroFreqGnoAny, aes(BioMe_AF, gnomAD.cov.exome)) + geom_point(col="black", fill="white") + theme_base()
+  p4 <- ggplot(mystuff, aes(BioMe_AF, gnomAD.exomes.AF)) + geom_point(col="black", fill="white") + theme_base()
+  pdf("~/www/figures/biome_gnomad_freq_discrepancy.pdf", width=11, height=8.5)
+    show(p1)
+    show(p2)
+    show(p3)
+    show(p4)
+  dev.off()
+  newvar <- unique(BioMeVar.zeroFreqGnoAny[(gnomAD.cov.genome>0|gnomAD.cov.exome>0),.( var=paste0(CHROM, ":", POS, ":", REF, ",", ALT))])
+  ot1 <- "/sc/arion/projects/psychgen2/psychosis_nlp/data/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.zeroFreqNonzeroCovInGnomad.tsv"
+  fwrite(newvar, row=F, quo=F, col=F, sep='\t', file=ot1)
+
+# save
+  mystuff <- mystuff[BioMe_AC!=0]
+  fwrite(mystuff, row=F, quo=F, sep='\t', file=out)
+  ##out <- "/sc/arion/projects/psychgen2/psychosis_nlp/data/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.myAnno_LoF_gnomAD_MPC_BioMeFreq.tsv"
+  ##mystuff <- fread(out) 
+
+# slim version 
+  kp1 <- c("CHROM", "POS", "REF", "ALT", "LOFTEE.gene", "MPC.gene", "MPC.transcript", 
+           "LOFTEE.LoF.HC", "LOFTEE.LoF.LC", "BioMe_AN", "BioMe_AC", "BioMe_AF", "MPC.score", 
+           "gnomAD.exomes.AC", "gnomAD.exomes.AF", "gnomAD.exomes.AN", "gnomAD.genomes.AC", "gnomAD.genomes.AF", "gnomAD.genomes.AN", "gnomAD.cov.exome", 
+           "gnomAD.cov.genome")
+  mystuff.slim <- mystuff[,kp1,with=F]
+
+# schema criteria (loftee HC or loftee LC or mpc > 2; minor allele count [MAC] ≤ 5 studywide; we will require MAC<=5 in gnomAD and BioMe)
+  mystuff.slim[,SCHEMA.freqCriteria:="NO"]
+  mystuff.slim[,SCHEMA.lofCriteria:="NO"]
+  mystuff.slim[,SCHEMA.mpcCriteria:="NO"]
+  mystuff.slim[,SCHEMA.allCriteria:="NO"]
+  mystuff.slim[BioMe_AC<=5 & gnomAD.genomes.AC<=5 & gnomAD.exomes.AC<=5, SCHEMA.freqCriteria:="YES"]
+  mystuff.slim[LOFTEE.LoF.HC==1|LOFTEE.LoF.LC==1, SCHEMA.lofCriteria:="YES"]
+  mystuff.slim[MPC.score>=2, SCHEMA.mpcCriteria:="YES"]
+  mystuff.slim[SCHEMA.freqCriteria=="YES" & (SCHEMA.lofCriteria=="YES" | SCHEMA.mpcCriteria=="YES"), SCHEMA.allCriteria:="YES"]
+
+# save
+  ot2 <- "/sc/arion/projects/psychgen2/psychosis_nlp/data/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.SCHEMAvars.tsv"
+  fwrite(unique(mystuff.slim[SCHEMA.allCriteria=="YES",.(x=paste0(CHROM, ":", POS, ":", REF, ",", ALT))]), row=F, quo=F, col=F, sep='\t', file=ot2)
+
+#+END_SRC
+
+
+* Assess Ancestral Origins of BioMe Variants Not in gnomAD (Part 1 - shell)
+
+#+BEGIN_SRC shell
+
+# setup
+  ml plink2 python py_packages bcftools tabix 
+  bme=/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/biallelic
+  dir=/sc/arion/projects/psychgen2/psychosis_nlp/data/biome
+  myd=/sc/arion/projects/psychgen2/psychosis_nlp/scratch
+  scr=/sc/arion/projects/psychgen2/psychosis_nlp/scripts/annotate_biome_vcfs.sh
+  tar=/sc/arion/projects/psychgen2/psychosis_nlp/resources/BioMeTargetFile_xgen_plus_spikein.b38.bed
+  dat=/sc/arion/projects/psychgen2/psychosis_nlp/data/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.zeroFreqNonzeroCovInGnomad.tsv
+  eth=/sc/arion/projects/psychgen2/psychosis_nlp/files/eve.SINAI_Freeze_Two.NF.commonsnps_samples_ancestries.txt
+  wes=/sc/hydra/projects/rg_psychgen/scratch
+
+# recode to plink format
+  cd ${wes}
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do
+    vcf=${wes}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.vcf.gz
+    plk=${wes}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}
+    plink2 --vcf ${vcf} --set-all-var-ids @:#:\$r,\$a --new-id-max-allele-len 500  --make-bed --out ${plk} 
+  done 
+
+# subset to snps with 0 AF in gnomad but nonzero coverage in gnomad
+  cd ${wes}
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do
+    inp=${wes}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}
+    out=${wes}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.zeroFreqNonzeroCovInGnomad
+    plink --bfile ${inp} --extract ${dat} --recode A --out ${out}
+  done 
+  ##plink2 --vcf <VCF path> --freq --pheno <population-file path> --loop-cats population
+
+# reformat
+  cd ${wes}
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do
+    inp=${wes}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.zeroFreqNonzeroCovInGnomad.raw
+    out=${wes}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.zeroFreqNonzeroCovInGnomad.raw.reformat
+    mybsub psychgen ${i} 10000 5:00 premium 1 "python /sc/hydra/work/charna02/scripts/nlp/melt_ped_counts.py ${inp} ${out}"
+  done 
+
+#+END_SRC
+
+
+* Assess Ancestral Origins of BioMe Variants Not in gnomAD (Part 2 - R)
+
+#+BEGIN_SRC R
+
+# setup  
+  setwd("/sc/arion/projects/psychgen2/psychosis_nlp/data/biome")
+  source("/sc/hydra/work/charna02/scripts/rx/rx_myfunctions.r")
+  rgd <- "/sc/hydra/projects/rg_psychgen/scratch/"
+  pfx <- "SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr"
+  out <- "/sc/arion/projects/psychgen2/psychosis_nlp/data/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.myAnno_LoF_gnomAD_MPC_BioMeFreq.tsv"
+  eth <- "/sc/arion/projects/psychgen2/psychosis_nlp/files/eve.SINAI_Freeze_Two.NF.commonsnps_samples_ancestries.txt"
+
+# load ethnicity data
+  eth <- fread(eth)
+  eth <- eth[, list( likelihood_vector_HM3 = unlist(strsplit(likelihood_vector_HM3, ",", fixed=T))), by=list(IID, HM3_population, Class, PC1, PC2, PC3, PC4)]
+  eth[, c("likelihood_vector_HM3_POP", "likelihood_vector_HM3_VAL") := tstrsplit(likelihood_vector_HM3, split="=", fixed=T) ]
+  eth[,likelihood_vector_HM3_VAL:=as.numeric(likelihood_vector_HM3_VAL)]
+  eth <- dcast( IID + HM3_population + Class + PC1 + PC2 + PC3 + PC4 ~ likelihood_vector_HM3_POP, value.var="likelihood_vector_HM3_VAL", fill=0, data=eth) 
+
+# load BioMe AF data
+  mystuff <- fread("/sc/arion/projects/psychgen2/psychosis_nlp/data/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.myAnno_LoF_gnomAD_MPC_BioMeFreq.tsv") 
+  kp2 <- c("CHROM", "POS", "REF", "ALT", "BioMe_AF", "BioMe_AC", "BioMe_AN")
+  myaf <- unique(mystuff[,kp2,with=F])
+
+# build table with number of alt alleles each ind has at different AF thresholds
+  mycounts <- c()
+  mac <- c(1, 10, 100, 1000, 10000, 15000)
+  cnames <- c("IID", "CHROM", "POS", "REF", "ALT", "NALT")
+  fls <- Sys.glob("/sc/hydra/projects/rg_psychgen/scratch/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr*.zeroFreqNonzeroCovInGnomad.raw.reformat")
+  inds <- unique(fread(fls[1])$V1)
+  for (i in fls){
+      chrom <- gsub("chr", "", unlist(strsplit(basename(i), split=".", fixed=T))[7]) 
+      cat('\n', chrom,'\n')
+      new <- fread(i)
+      colnames(new) <- cnames
+      new[,CHROM:=as.character(CHROM)]
+      nind <- uniqueN(new$IID)*2
+      tot <- merge(new, myaf)
+      lte1mac <- tot[BioMe_AC<=1,list(NALT=sum(NALT)),by=list(IID)][,.(IID, CHROM=chrom, PARAM="MAC1", NIND=nind, NALT)]
+      lte0p5pct <- tot[(BioMe_AC/BioMe_AN)<=0.005,list(NALT=sum(NALT)),by=list(IID)][,.(IID, CHROM=chrom, PARAM="LTE0p5PCT", NIND=nind, NALT)]
+      lte1pct <- tot[(BioMe_AC/BioMe_AN)<=0.01,list(NALT=sum(NALT)),by=list(IID)][,.(IID, CHROM=chrom, PARAM="LTE1PCT", NIND=nind, NALT)]
+      gt1lt10mac <- tot[BioMe_AC>1 & BioMe_AC<=10,list(NALT=sum(NALT)),by=list(IID)][,.(IID, CHROM=chrom, PARAM="MACGT1LT10", NIND=nind, NALT)]
+      gt1mac <- tot[BioMe_AC>1,list(NALT=sum(NALT)),by=list(IID)][,.(IID, CHROM=chrom, PARAM="MACGT1", NIND=nind, NALT)]
+      gt1pct <- tot[(BioMe_AC/BioMe_AN)>0.01,list(NALT=sum(NALT)),by=list(IID)][,.(IID, CHROM=chrom, PARAM="GT1PCT", NIND=nind, NALT)]
+      gt5pct <- tot[(BioMe_AC/BioMe_AN)>0.05,list(NALT=sum(NALT)),by=list(IID)][,.(IID, CHROM=chrom, PARAM="GT5PCT", NIND=nind, NALT)]
+      gt25pct <- tot[(BioMe_AC/BioMe_AN)>0.25,list(NALT=sum(NALT)),by=list(IID)][,.(IID, CHROM=chrom, PARAM="GT25PCT", NIND=nind, NALT)]
+      if ( uniqueN(lte1mac$IID) != length(inds) ){lte1mac <- rbind(lte1mac, data.table( IID=inds[!inds %in% lte1mac$IID], CHROM=chrom, PARAM="MAC1", NIND=nind, NALT=0 ))}
+      if ( uniqueN(lte0p5pct$IID) != length(inds) ){lte0p5pct <- rbind(lte0p5pct, data.table( IID=inds[!inds %in% lte0p5pct$IID], CHROM=chrom, PARAM="LTE0p5PCT", NIND=nind, NALT=0 ))}
+      if ( uniqueN(lte1pct$IID) != length(inds) ){lte1pct <- rbind(lte1pct, data.table( IID=inds[!inds %in% lte1pct$IID], CHROM=chrom, PARAM="LTE1PCT", NIND=nind, NALT=0 ))}
+      if ( uniqueN(gt1lt10mac$IID) != length(inds) ){gt1lt10mac <- rbind(gt1lt10mac, data.table( IID=inds[!inds %in% gt1lt10mac$IID], CHROM=chrom, PARAM="MACGT1LT10", NIND=nind, NALT=0 ))}
+      if ( uniqueN(gt1mac$IID) != length(inds) ){gt1mac <- rbind(gt1mac, data.table( IID=inds[!inds %in% gt1mac$IID], CHROM=chrom, PARAM="MACGT1", NIND=nind, NALT=0 ))}
+      if ( uniqueN(gt1pct$IID) != length(inds) ){gt1pct <- rbind(gt1pct, data.table( IID=inds[!inds %in% gt1pct$IID], CHROM=chrom, PARAM="GT1PCT", NIND=nind, NALT=0 ))}
+      if ( uniqueN(gt5pct$IID) != length(inds) ){gt5pct <- rbind(gt5pct, data.table( IID=inds[!inds %in% gt5pct$IID], CHROM=chrom, PARAM="GT5PCT", NIND=nind, NALT=0 ))}
+      if ( uniqueN(gt25pct$IID) != length(inds) ){gt25pct <- rbind(gt25pct, data.table( IID=inds[!inds %in% gt25pct$IID], CHROM=chrom, PARAM="GT25PCT", NIND=nind, NALT=0 ))}
+      mycounts <- rbind(mycounts, lte1mac, gt1mac, gt1lt10mac, lte0p5pct, lte1pct, gt1pct, gt5pct, gt25pct)      
+  }
+
+# merge counts with ethnicity data
+  mycounts.chr <- copy(mycounts)
+  mycounts.all <- mycounts.chr[,list(NALT=sum(NALT)), by=list(IID, PARAM)]
+  mycounts.chr <- merge(mycounts.chr, eth, by="IID")
+  mycounts.all <- merge(mycounts.all, eth, by="IID")
+
+# plot   
+  param <- unique(mycounts.all$PARAM)
+  unknowns <- c("UNKNOWN0", "UNKNOWN1", "UNKNOWN2")
+  pdf("~/www/figures/biome_notInGnomad_sanity_checks.pdf", width=15, height=12)
+  for (i in param){
+      pdt <- mycounts.all[!Class %in% unknowns & PARAM == i]
+      p <- ggplot(pdt, aes(NALT, fill=Class)) + geom_density(alpha=0.3) + theme_base() + facet_wrap(~Class, nrow=5) + ggtitle(paste("FREQ PARAM:", i))
+      show(p)
+  }
+  dev.off()
+
+#+END_SRC
+
+
+* Calculate/Analyze BioMe Rare Variant Score (Part 1 - shell)
+
+#+BEGIN_SRC shell
+
+##some ideas: https://www.biostars.org/p/404674/
+
+# setup
+  ml plink2 python py_packages bcftools tabix 
+  bme=/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/biallelic
+  dir=/sc/arion/projects/psychgen2/psychosis_nlp/data/biome
+  myd=/sc/arion/projects/psychgen2/psychosis_nlp/scratch
+  scr=/sc/arion/projects/psychgen2/psychosis_nlp/scripts/annotate_biome_vcfs.sh
+  tar=/sc/arion/projects/psychgen2/psychosis_nlp/resources/BioMeTargetFile_xgen_plus_spikein.b38.bed
+  dat=/sc/arion/projects/psychgen2/psychosis_nlp/data/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.SCHEMAvars.tsv
+  eth=/sc/arion/projects/psychgen2/psychosis_nlp/files/eve.SINAI_Freeze_Two.NF.commonsnps_samples_ancestries.txt
+  wes=/sc/hydra/projects/rg_psychgen/scratch
+
+# subset to variants with schema annotation criteria
+  cd ${wes}
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do
+    inp=${wes}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}
+    out=${wes}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.SCHEMAvars
+    plink --bfile ${inp} --extract ${dat} --recode A --out ${out}
+  done 
+  ##plink2 --vcf <VCF path> --freq --pheno <population-file path> --loop-cats population
+
+# reformat
+  cd ${wes}
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+  do
+    inp=${wes}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.SCHEMAvars.raw
+    out=${wes}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr${i}.SCHEMAvars.raw.reformat
+    mybsub psychgen ${i} 10000 5:00 premium 1 "python /sc/hydra/work/charna02/scripts/nlp/melt_ped_counts.py ${inp} ${out}"
+  done 
+  cat *SCHEMAvars.raw.reformat > ${dir}/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.SCHEMAvars.raw.reformat
+
+#+END_SRC
+
+
+* Calculate/Analyze BioMe Rare Variant Score (Part 2 - R)
+
+#+BEGIN_SRC R
+
+# setup  
+  library(esc)
+  setwd("/sc/arion/projects/psychgen2/psychosis_nlp/data/biome")
+  source("/sc/hydra/work/charna02/scripts/rx/rx_myfunctions.r")
+  source("/sc/hydra/work/charna02/scripts/misc/SE_from_p.R")
+  rgd <- "/sc/hydra/projects/rg_psychgen/scratch/"
+  pfx <- "SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.chr"
+  eth <- "/sc/arion/projects/psychgen2/psychosis_nlp/files/eve.SINAI_Freeze_Two.NF.commonsnps_samples_ancestries.txt"
+  map <- fread("~/gene_ids_ensembl2symbol_fromHUGO_10JUN2020.tsv", na="")[!is.na(`Ensembl gene ID`)][,.(symbol=`Approved symbol`,gene=`Ensembl gene ID` )]
+  g2p <- fread("~/map_gene_protein_ID.txt")
+  setwd("/sc/hydra/projects/psychgen/pgc/pgc3seq/data/nlp")
+  library(data.table)
+  library(ggplot2)
+  library(corrplot) 
+  library(icd.data)
+  library(icd)
+  library(stats)
+  library(rms)
+  library(glmnet)
+  library(ggcorrplot)
+
+# load variant annotation data
+  mystuff <- fread("/sc/arion/projects/psychgen2/psychosis_nlp/data/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.myAnno_LoF_gnomAD_MPC_BioMeFreq.tsv", na=c("", "NA"))
+  kp1 <- c("CHROM", "POS", "REF", "ALT", "LOFTEE.gene", "MPC.gene", "MPC.transcript", "LOFTEE.LoF.HC", "LOFTEE.LoF.LC", 
+           "BioMe_AN", "BioMe_AC", "BioMe_AF", "MPC.score", 
+           "gnomAD.exomes.AC", "gnomAD.exomes.AF", "gnomAD.exomes.AN", "gnomAD.genomes.AC", "gnomAD.genomes.AF", "gnomAD.genomes.AN", "gnomAD.cov.exome", 
+           "gnomAD.cov.genome")
+  mystuff.slim <- mystuff[,kp1,with=F]
+  mystuff.slim[,SCHEMA.freqCriteria:="NO"]
+  mystuff.slim[,SCHEMA.lofCriteria:="NO"]
+  mystuff.slim[,SCHEMA.mpcCriteria:="NO"]
+  mystuff.slim[,SCHEMA.allCriteria:="NO"]
+  mystuff.slim[BioMe_AC<=5 & gnomAD.genomes.AC<=5 & gnomAD.exomes.AC<=5, SCHEMA.freqCriteria:="YES"]
+  mystuff.slim[LOFTEE.LoF.HC==1|LOFTEE.LoF.LC==1, SCHEMA.lofCriteria:="YES"]
+  mystuff.slim[MPC.score>=2, SCHEMA.mpcCriteria:="YES"]
+  mystuff.slim[SCHEMA.freqCriteria=="YES" & (SCHEMA.lofCriteria=="YES" | SCHEMA.mpcCriteria=="YES"), SCHEMA.allCriteria:="YES"]
+  mystuff.slim <- unique(mystuff.slim)
+
+# load ethnicity data
+  eth <- fread(eth)
+  eth <- eth[, list( likelihood_vector_HM3 = unlist(strsplit(likelihood_vector_HM3, ",", fixed=T))), by=list(IID, HM3_population, Class, PC1, PC2, PC3, PC4)]
+  eth[, c("likelihood_vector_HM3_POP", "likelihood_vector_HM3_VAL") := tstrsplit(likelihood_vector_HM3, split="=", fixed=T) ]
+  eth[,likelihood_vector_HM3_VAL:=as.numeric(likelihood_vector_HM3_VAL)]
+  eth <- dcast( IID + HM3_population + Class + PC1 + PC2 + PC3 + PC4 ~ likelihood_vector_HM3_POP, value.var="likelihood_vector_HM3_VAL", fill=0, data=eth) 
+
+# load biome variant data meeting schema criteria
+  sma.n <- 24248 + 97322
+  sma.var <- fread("/sc/arion/projects/psychgen2/psychosis_nlp/data/biome/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.SCHEMAvars.raw.reformat")
+  colnames(sma.var) <- c("IID", "CHROM", "POS", "REF", "ALT", "NALT")
+  sma.var <- unique(sma.var)
+  ##
+  ##all are variants expected present?
+  ##
+  expected <- unique(mystuff.slim[SCHEMA.allCriteria=="YES",.(CHROM, POS, REF, ALT, expected=1)])
+  present <- unique(sma.var[,.(CHROM, POS, REF, ALT, present=1)])
+  mer <- merge(expected, present, all=T, by=c("CHROM", "POS", "REF", "ALT"))
+  mer[is.na(expected), expected:=0]
+  mer[is.na(present), present:=0]
+  nrow(mer[expected==present]) == nrow(mer) #[1] TRUE, ok good
+
+# load schema results
+  sma <- fread("/sc/hydra/projects/psychgen/pgc/pgc3seq/files/schema_meta_results_2020_09_16_16_42_59.csv")
+  sma[,Description:=NULL]
+  colnames(sma) <- c("gene", "LoF.cas", "LoF.con", "MPCgte3.cas", "MPCgte3.con", "MPC2to3.cas", "MPC2to3.con", 
+                     "LoF.dnv", "MPCgte3.dnv", "MPC2to3.dnv", "pmeta", "qmeta", "classI.or", "classII.or")
+
+# some counts
+  nrow(present) #[1] 131610 ... number of chr|pos|ref|alt in biome meeting schema criteria
+  nrow(merge(present, mystuff.slim, by=c("CHROM", "POS", "REF", "ALT"))) #[1] 133111 ... some chr|pos|ref|alt have different annotations depending on gene
+  present2 <- merge(present, mystuff.slim, by=c("CHROM", "POS", "REF", "ALT"))
+  present2 <- merge(present2, present2[, list(NANNO=.N), by=list(CHROM, POS, REF, ALT)])
+  nrow(sma.var) #[1] 182612 ... number of iid|chr|pos|ref|alt in biome meeting schema criteria (so, some iid have >1 schema variant)
+
+# rare variant PRS
+  pt <- c(1, 0.5, 0.05, 0.005, 5e-04)
+  anncol <- c("CHROM", "POS", "REF", "ALT", "LOFTEE.gene", "MPC.gene", "MPC.transcript", "LOFTEE.LoF.HC", 
+            "LOFTEE.LoF.LC", "MPC.score", "SCHEMA.lofCriteria", "SCHEMA.mpcCriteria")
+  x <- mystuff.slim[SCHEMA.allCriteria=="YES",anncol,with=F]
+  c0 <- merge(sma.var, x)
+  c1 <- unique(c0[SCHEMA.lofCriteria=="YES" & SCHEMA.mpcCriteria=="NO"][,.(CHROM, POS, REF, ALT, gene=LOFTEE.gene, IID, NALT)])
+  c2 <- unique(c0[SCHEMA.lofCriteria=="NO" & SCHEMA.mpcCriteria=="YES" & MPC.score>=3][,.(CHROM, POS, REF, ALT, gene=MPC.gene, IID, NALT)])
+  c3 <- unique(c0[SCHEMA.lofCriteria=="YES" & SCHEMA.mpcCriteria=="YES"  & MPC.score>=3 & LOFTEE.gene==MPC.gene][,.(CHROM, POS, REF, ALT, gene=MPC.gene, IID, NALT)])
+  c3x <- c0[SCHEMA.lofCriteria=="YES" & SCHEMA.mpcCriteria=="YES" & LOFTEE.gene!=MPC.gene][,.(CHROM, POS, REF, ALT, gene=LOFTEE.gene, IID, NALT)]
+  c3y <- c0[SCHEMA.lofCriteria=="YES" & SCHEMA.mpcCriteria=="YES" & LOFTEE.gene!=MPC.gene  & MPC.score>=3][,.(CHROM, POS, REF, ALT, gene=MPC.gene, IID, NALT)]
+  c3 <- rbind (c3, c3x, c3y) 
+  nrow(rbind(c1, c2, c3)) == uniqueN(rbind(c1, c2, c3)) #[1] TRUE ... so no variants will be counted twice
+  cn <- rbind(c1, c2, c3)[,list(rawcount=sum(NALT)),by=list(IID, gene)]
+  cn <- merge(cn, sma[,.(gene,schema.classI.or=classI.or,pmeta,qmeta)], all.x=T)
+  mx <- max(cn[!is.infinite(schema.classI.or)]$schema.classI.or,na.rm=T)
+  cn[,pweight:=1-pmeta]
+  cn[,pweightcount:=rawcount*pweight]
+  cn[,orweight:=schema.classI.or]
+  cn[is.infinite(schema.classI.or), orweight:=mx]
+  cn[,orweightcount:=rawcount*orweight]  
+  cn[,orweight2:=schema.classI.or]
+  cn[is.infinite(schema.classI.or), orweight2:=0]
+  cn[,orweightcount2:=rawcount*orweight2]  
+  scores <- unique(cn[,.(IID)])
+  for ( i in pt ){
+      cur <- cn[pmeta<=i & schema.classI.or>1, 
+                list(rvPRS.pweight=sum(pweightcount), rvPRS.orweight=sum(orweightcount), rvPRS.orweight2=sum(orweightcount2), rvPRS.raw=sum(rawcount)),IID]
+      colnames(cur)[2] <- paste(colnames(cur)[2], i, sep=".")
+      colnames(cur)[3] <- paste(colnames(cur)[3], i, sep=".")
+      colnames(cur)[4] <- paste(colnames(cur)[4], i, sep=".")
+      colnames(cur)[5] <- paste(colnames(cur)[5], i, sep=".")
+      scores <- merge(scores, cur, by="IID", all=T)
+      fix1 <- colnames(cur)[2]
+      fix2 <- colnames(cur)[3]
+      fix3 <- colnames(cur)[4]
+      fix4 <- colnames(cur)[5]
+      scores[ is.na(get(fix1)), try(fix1) := 0 ]
+      scores[ is.na(get(fix2)), try(fix2) := 0 ]
+      scores[ is.na(get(fix3)), try(fix3) := 0 ]
+      scores[ is.na(get(fix4)), try(fix4) := 0 ]
+  }
+  colnames(scores) <- c("IID", "rvPRS.pweight.pt1", "rvPRS.orweight.pt1", "rvPRS.orweightNoInf.pt1", "rvPRS.raw.pt1", 
+                        "rvPRS.pweight.pt0p5", "rvPRS.orweight.pt0p5", "rvPRS.orweightNoInf.pt0p5", "rvPRS.raw.pt0p5", 
+                        "rvPRS.pweight.pt0p05", "rvPRS.orweight.pt0p05", "rvPRS.orweightNoInf.pt0p05", "rvPRS.raw.pt0p05", 
+                        "rvPRS.pweight.pt0p005", "rvPRS.orweight.pt0p005", "rvPRS.orweightNoInf.pt0p005", "rvPRS.raw.pt0p005", 
+                        "rvPRS.pweight.pt5en4", "rvPRS.orweight.pt5en4", "rvPRS.orweightNoInf.pt5en4", "rvPRS.raw.pt5en4")
+  saveRDS(scores, "/sc/arion/projects/psychgen2/psychosis_nlp/data/rvPRS.RDS")
+
+#+END_SRC
+
+
+* Calculate/Analyze BioMe Rare Variant Score (Part 3 - R)
+
+#+BEGIN_SRC R
+
+# setup 
+  library(data.table)
+  library(stats)
+  library(rms)
+  library(ggplot2)
+  library(ggthemes)
+  library(meta)
+  library(metafor)
+
+# load data 
+  dt <- fread("/sc/arion/projects/psychgen2/psychosis_nlp/files/BioMe_PsychosisNLP_MASTER_TABLE.tsv", na=c("", "NA"))
+
+# define genetic score column sets
+  szprs.col <- grep("sczprs", colnames(dt), value=T)
+  cgprs.col <- grep("cogprs", colnames(dt), value=T)
+  edprs.col <- grep("eduprs", colnames(dt), value=T)
+  cnvct.col <- grep("cnvbur", colnames(dt), value=T)
+  rvprs.col <- grep("rvPRS", colnames(dt), value=T)
+  score.col <- list("prs"=c(szprs.col, cgprs.col, edprs.col), "rvprs"=rvprs.col, "cnv"=cnvct.col)
+
+# define phenotype column sets
+  phers.col <- list( "psychosis"=list("raw"="psychosis.phers", "weighted"="psychosis.phers.weighted"), 
+                    "mania"=list("raw"="mania.phers", "weighted"="mania.phers.weighted")) 
+  myicd.col <- list( "scz"=list("count"="scz.icd.count", "binary"="scz.icd.binary"),
+                    "bip"=list("count"="bip.icd.count", "binary"="bip.icd.binary"),
+                    "cog"=list("count"="cog.icd.count", "binary"="cog.icd.binary"),
+                    "cog"=list("count"="cog.icd.count", "binary"="cog.icd.binary"),
+                    "scznotbip"=list("binary"="scznotbip.icd.binary"),
+                    "sczandbip"=list("binary"="sczandbip.icd.binary"),
+                    "bipnotscz"=list("binary"="bipnotscz.icd.binary"),
+                    "scznotcog"=list("binary"="scznotcog.icd.binary"),
+                    "sczandcog"=list("binary"="sczandcog.icd.binary"),
+                    "cognotscz"=list("binary"="cognotscz.icd.binary"),
+                    "psychosis"=list("count"="psychosis.icd.count", "binary"="psychosis.icd.binary"))
+  myphe.col <- list("phers"=phers.col, "icd"=myicd.col)
+
+# define ancestry covariate column sets
+  genpc.col <- grep("^PC", colnames(dt), value=T)
+  ##admix.col <- c("ASW", "CEU", "CHB", "CHD", "GIH", "JPT", "LWK", "MEX", "MKK", "TSI", "YRI")
+  ##covar.col <- list("pca"=genpc.col, "admix"=admix.col)
+  ##ancat.col <- c("AncestryClass", "gill.ContinentalGrouping","gill.IBDcommunity")
+  covar.col <- list("pca"=genpc.col)
+  ancat.col <- c("gill.ContinentalGrouping","gill.IBDcommunity")
+
+# make helper object for parallelization
+  hlp <- c()
+  for (i in names(covar.col)){
+      for (j in names(myphe.col)){
+          for (k in names(myphe.col[[j]])){
+              for (l in myphe.col[[j]][[k]]){
+                  for (m in names(score.col)){
+                      for (n in score.col[[m]]){
+                          cat(i, j, k, l, m, n, NA, NA, '\n')
+                          add <- data.table(ancestryCol=NA, ancestryValue=NA, covarType=i, pheType=j, pheDx=k, pheCol=l, genScoreType=m, genScoreCol=n)
+                          hlp <- rbind(hlp, add)
+                          if (i=="pca"){
+                              for (o in ancat.col){
+                                  for (p in unique(dt[[o]])){
+                                      cat(i, j, k, l, m, n, o, p, '\n')
+                                      add <- data.table(ancestryCol=o, ancestryValue=p, covarType=i, pheType=j, pheDx=k, pheCol=l, genScoreType=m, genScoreCol=n)
+                                      hlp <- rbind(hlp, add)
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+      }
+  } 
+ 
+# limit 
+  hlp <- hlp[grep("gill", ancestryCol)]
+
+# write
+  out <- "/sc/arion/projects/psychgen2/psychosis_nlp/files/analysis_helper.tsv"
+  fwrite(hlp, row=F, quo=F, col=F, sep='\t', na="NA", file=out)
+
+#+END_SRC
+
+
+* Calculate/Analyze BioMe Rare Variant Score (Part 4 - shell)
+
+#+BEGIN_SRC shell
+
+# setup
+  ml R
+  RSCRIPT=/sc/arion/work/charna02/scripts/nlp/nlp_run_analyses.r
+  cmd=/sc/arion/projects/psychgen2/psychosis_nlp/files/analysis_helper.tsv
+  scr=/sc/arion/projects/psychgen2/psychosis_nlp/scratch/assoctests
+  cd ${scr}
+
+# split
+  ##ls ${scr}/run/run.????? > ${scr}/jlist
+  ##cat ${scr}/jlist | xargs rm
+  split -a5 -l2 ${cmd} ${scr}/run/run.
+
+# rename (needed to run job array)
+  find ${scr}/run/ -wholename "*run.*" > ${scr}/runlist
+  let cnt=1
+  for i in `cat ${scr}/runlist`
+  do
+    mv ${i} ${scr}/run/run.${cnt} &
+    echo "Rscript ${RSCRIPT} ${scr}/run/run.${cnt} ${scr}/res/res.${cnt}" > ${scr}/job/job.${cnt} &
+    let cnt=cnt+1
+  done
+
+# run 
+  cd ${scr}/log
+  echo '#!/bin/bash
+  #BSUB -q premium
+  #BSUB -P acc_psychgen
+  #BSUB -J job[1-10000]%500
+  #BSUB -oo job.%I.stdout
+  #BSUB -eo job.%I.stderr
+  #BSUB -P acc_psychgen
+  #BSUB -W 100:00
+  #BSUB -n 3
+  #BSUB -R "rusage[mem=3000]"
+  #BSUB -R "span[hosts=1]"
+  #BSUB -cwd '${scr}'/log
+  #BSUB -L /bin/bash
+  ml R
+  source '${scr}'/job/job.${LSB_JOBINDEX}' > ${scr}/run_jobarray1
+  bsub < ${scr}/run_jobarray1
+
+  echo '#!/bin/bash
+  #BSUB -q premium
+  #BSUB -P acc_psychgen
+  #BSUB -J job[10001-20000]%500
+  #BSUB -oo job.%I.stdout
+  #BSUB -eo job.%I.stderr
+  #BSUB -P acc_psychgen
+  #BSUB -W 100:00
+  #BSUB -n 3
+  #BSUB -R "rusage[mem=1000]"
+  #BSUB -R "span[hosts=1]"
+  #BSUB -cwd '${scr}'/log
+  #BSUB -L /bin/bash
+  ml R
+  source '${scr}'/job/job.${LSB_JOBINDEX}' > ${scr}/run_jobarray2
+  bsub < ${scr}/run_jobarray2
+
+  echo '#!/bin/bash
+  #BSUB -q premium
+  #BSUB -P acc_psychgen
+  #BSUB -J job[20001-30000]%500
+  #BSUB -oo job.%I.stdout
+  #BSUB -eo job.%I.stderr
+  #BSUB -P acc_psychgen
+  #BSUB -W 2:00
+  #BSUB -n 1
+  #BSUB -R "rusage[mem=1000]"
+  #BSUB -R "span[hosts=1]"
+  #BSUB -cwd '${scr}'/log
+  #BSUB -L /bin/bash
+  ml R
+  source '${scr}'/job/job.${LSB_JOBINDEX}' > ${scr}/run_jobarray3
+  bsub < ${scr}/run_jobarray3
+
+  echo '#!/bin/bash
+  #BSUB -q premium
+  #BSUB -P acc_psychgen
+  #BSUB -J job[30001-38610]%500
+  #BSUB -oo job.%I.stdout
+  #BSUB -eo job.%I.stderr
+  #BSUB -P acc_psychgen
+  #BSUB -W 2:00
+  #BSUB -n 1
+  #BSUB -R "rusage[mem=1000]"
+  #BSUB -R "span[hosts=1]"
+  #BSUB -cwd '${scr}'/log
+  #BSUB -L /bin/bash
+  ml R
+  source '${scr}'/job/job.${LSB_JOBINDEX}' > ${scr}/run_jobarray4
+  bsub < ${scr}/run_jobarray4
+
+# check 
+  cd ${scr}/log
+  find ${PWD}/ -wholename "*stdout" | sort | uniq > sent 
+  cat sent | xargs fgrep -m1 Success | awk -F":" '{print $1}' | sort | uniq > success 
+  comm -23 sent success > fail
+  wc -l sent success fail 
+  ##  
+  ## the ones that fail are small datasets we aren't going to use probably 
+  ##
+
+# clean up 
+  cd ${scr}/res
+  find ${PWD}/ -wholename "*res.*" | head -1 | xargs awk 'NR==1' > /sc/arion/projects/psychgen2/psychosis_nlp/results/gen_phe_mod_res.txt 
+  find ${PWD}/ -wholename "*res.*" | xargs fgrep ancestryCol -v | cut -d":" -f2- >> /sc/arion/projects/psychgen2/psychosis_nlp/results/gen_phe_mod_res.txt 
+
+#+END_SRC
+
+
+* Calculate/Analyze BioMe Rare Variant Score (Part 5 - R)
+
+#+BEGIN_SRC R
+
+# setup 
+  library(data.table)
+  library(stats)
+  library(rms)
+  library(ggplot2)
+  library(ggthemes)
+  library(meta)
+  library(metafor)
+
+# results for rare variant prs
+  res <- fread("/sc/arion/projects/psychgen2/psychosis_nlp/results/gen_phe_mod_res.txt")[genScoreType=="rvprs"][!is.na(p)][!is.na(ancestryCol)]
+
+# rare variant prs info
+  res[ , rvprsWeight := tstrsplit(genScoreCol, split=".", fixed=T, keep=2L)]
+  res[ , rvprsThresh := tstrsplit(genScoreCol, split=".", fixed=T, keep=3L)]
+  res[ , rvprsWeight := gsub("weight", "", rvprsWeight)]
+  res[ , rvprsThresh := gsub("pt", "", rvprsThresh)]
+  res[ , rvprsThresh := gsub("en", "E-", rvprsThresh)]
+  res[ , rvprsThresh := gsub("p", ".", fixed=T, rvprsThresh)]
+  res[ , rvprsThresh := as.numeric(rvprsThresh)]
+
+# clean up
+  res[ , genScoreCol := NULL]
+  res[ , covarType:=NULL]
+  res[ , pheDx:=NULL]
+  res[ , pheType:=NULL]
+  res[ , genScoreType:=NULL]
+
+# plots
+  kp1 <- c("cog.icd.binary", "scz.icd.binary", "scznotcog.icd.binary", "cognotscz.icd.binary", "sczandcog.icd.binary")
+  kp2 <- c("EUR", "AMR", "AFR")
+  pdat1 <- res[pheCol %in% kp1 & ancestryValue %in% kp2 & rvprsWeight!="p"]
+  pdf("~/www/figures/psychosisbiome_rvprs_explore.pdf", width=23, height=12)
+  for (i in unique(pdat1$rvprsWeight)){
+      pdat2 <- pdat1[rvprsWeight==i]
+      p <- ggplot(pdat2, aes(as.factor(rvprsThresh), r2) ) + geom_col() + facet_grid(pheCol~ancestryValue, scales="free") + ggtitle(i) + theme_base() + xlab("pthreshold")
+      show(p)
+  }
+  dev.off()
+
+#+END_SRC
+
